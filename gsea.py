@@ -1,32 +1,13 @@
 import numpy as np
+from scipy.stats import ks_2samp
 import sys, os
-
-
-
-# https://www.lynda.com/NumPy-tutorials/NumPy-data-science-IMQAV/508873/543332-4.html
-
-def testing():
-	print "Hello World"
-	a = np.arange(1,100000001)
-	print a.sum()
-#testing()
-
-
-def sales_ex():
-	sales_a = np.array([
-		[5.0,2000.0],
-		[10.0,500.0],
-		[20.0,200.0]])
-	
-	print sales_a[:,0]
-#sales_ex()
-
 
 
 
 class gsea(object):
 	# will need the class object to handle and store all that rickety data
 	def __init__(self):
+		self.seed_val = 20170422
 		self.data_expression_profile = {}
 		# store if the patient is AML or ALL. This can operate later a key to the lists
 		# upon construction, it will look like: "data_expression_profile['patient'] = ["AML", "ALL", "ALL", "ALL", "AML"]
@@ -44,7 +25,7 @@ class gsea(object):
 		# how will you actually store your findings? 
 		# test_result['GENE'] = [ results_int, results_int, results_int, ...]
 		# test_result['GENE'][0] will ALWAYS contains the actual score. [1...n] is null hypothesis testing 
-		self.test_result = {}
+		self.test_results = {}
 
 	def error_handler(self, content):
 		print ("Error: {}\n".format(content))
@@ -88,17 +69,46 @@ class gsea(object):
 				self.narrowed_gene_expressions.append(k)
 				self.gene_samples_found += 1
 
-		# testing print statement for myself~~~
-		print ("Narrowed Set: {}".format(len(self.narrowed_gene_expressions)))
-		#print ("Narrowed Set: {}".format(self.gene_samples_found))
-
-
 
 	# run diference calculation
 	def test_gene_set(self):
 		# test set A and set B
 
-		# test for null hypothesis, so test it a bunch
+		# iterate through each dict, using the narrowed_gene expressions shit
+		# that AML/ ALL key array
+		# the unique typs
+		# the values within a given gene array
+		for gene in self.narrowed_gene_expressions:
+			self.test_results[gene] = (self._perform_gene_set_test(self.data_expression_profile.get(gene), self.data_expression_profile.get('patient_type')))
+
+
+		# self.data_expression_profile['patient_type']
+		# self.narrowed_gene_expressions
+
+	# we'll need the patient types, and their values	
+	def _perform_gene_set_test(self, gene_set, patient_key):
+		# build the sets
+
+		unique_patient_types = list(set(patient_key))
+
+		gene_dict = {}
+		for pos in range(len(patient_key)):
+			if patient_key[pos] in gene_dict:
+				gene_dict[patient_key[pos]].append(gene_set[pos])
+			else:
+				gene_dict[patient_key[pos]] = []
+				gene_dict[patient_key[pos]].append(gene_set[pos])
+
+
+		np.random.seed(self.seed_val)
+		n1 = len(gene_dict[unique_patient_types[0]])
+		n2 = len(gene_dict[unique_patient_types[1]])
+
+
+		return ks_2samp(gene_dict.get(unique_patient_types[0]), gene_dict.get(unique_patient_types[1]))
+
+
+
 	# shuffle data set
 	# 
 	#
@@ -122,6 +132,9 @@ class gsea(object):
 				print p
 				return p
 
+	def show_test_results(self):
+		for (k, v) in self.test_results.items():
+			print (k, v)
 
 
 
@@ -138,7 +151,8 @@ def main():
 		#print("Patient_expression_profile: {}".format(gs.data_expression_profile['patient_type']))
 
 		gs.narrow_set("leukemia")
-
+		gs.test_gene_set()
+		gs.show_test_results()
 
 
 
