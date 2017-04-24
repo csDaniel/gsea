@@ -178,8 +178,24 @@ class gsea(object):
 		result = float(difference) / len(gene_set)
 		return result
 
-	def save_expression_profile(self):
-		f = open('gene_expression_test_data', 'w')
+	def save_expression_profile_json(self):
+		f = open('gene_expression_test_data_json', 'w')
+
+		content = {}
+		content['pathways'] = self.gene_set_pathways
+		content['patient_type'] = self.data_expression_profile['patient_type']
+		content['enrichment_scores'] = self.enrichment_scores[0]
+		content['gene_set_pathways'] = self.gene_set_pathways
+		content['enrichment_scores'] = self.enrichment_scores[0]
+		content['p_value'] = self.p_value
+		content['test_results'] = self.test_results[0]
+
+		f.write(json.dumps(content))
+
+		f.close()
+
+	def save_expression_profile_pretty(self):
+		f = open('gene_expression_test_data_pretty', 'w')
 
 		# gene_profile
 		f.write("Gene Profiles:\n")
@@ -187,17 +203,15 @@ class gsea(object):
 		f.write("\n")
 
 		# score, es_static
-		f.write("Enrichment Score & ES_Static:\n")
-		f.write(json.dumps(self.enrichment_scores[0]))
-		# p-value
+		f.write("Enrichment & ES Score: {}\n".format(self.enrichment_scores[0]))
 
-		f.write("\n")
+		# p-value
 		f.write("P-Value: {}\n".format(self.p_value))
 		# enriched scores
-		f.write(json.dumps(self.test_results[0]))
+		for val in self.test_results[0]:
+			f.write("{}\n".format(val))
+
 		f.write("\n")
-
-
 		f.close()
 
 
@@ -211,7 +225,8 @@ def main():
 		gs.init_pathways_profile(sys.argv[2], "leukemia")
 		gs.test_gene_set_controller()
 
-		gs.save_expression_profile()
+		gs.save_expression_profile_json()
+		gs.save_expression_profile_pretty()
 main()
 
 
