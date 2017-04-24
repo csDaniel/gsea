@@ -1,14 +1,12 @@
 import numpy as np
-from scipy.stats import ks_2samp
+import math
+import random
 from collections import deque
 import sys, os
-
-
 
 class gsea(object):
 	# will need the class object to handle and store all that rickety data
 	def __init__(self):
-		self.seed_val = 20170422
 		self.data_expression_profile = {}
 		# store if the patient is AML or ALL. This can operate later a key to the lists
 		# upon construction, it will look like: "data_expression_profile['patient'] = ["AML", "ALL", "ALL", "ALL", "AML"]
@@ -19,17 +17,9 @@ class gsea(object):
 		# raw strings from the pathways.txt
 		self.gene_set_pathways = []
 		self.pathways_count = 0
-
-		self.examined_genes = []
-		# an iterable list of the expression profile keys
-		self.gene_samples_found = 0
-
-		# store all of the test results here
-		# how will you actually store your findings? 
-		# test_result['GENE'] = [ results_int, results_int, results_int, ...]
-		# test_result['GENE'][0] will ALWAYS contains the actual score. [1...n] is null hypothesis testing 
 		self.initial_test_results = []
 		self.test_results = {}
+		self.enrichment_scores = []
 
 	def error_handler(self, content):
 		print ("Error: {}\n".format(content))
@@ -40,8 +30,6 @@ class gsea(object):
 
 		with open(source_file) as fd:
 			for line in fd:
-				#print ("Here's a line in the expressions")
-				#print ("{}".format(line))
 				self._format_init_expression(line)
 
 		self.gene_count = len(self.data_expression_profile) - 1
@@ -64,8 +52,6 @@ class gsea(object):
 		with open(source_file) as fd:
 			for line in fd:
 				if search_term.lower() in line.lower():
-					#print line
-					#self.gene_set_pathways.append(line)
 					self._refine_pathways_profile(line)
 
 		self.pathways_count = len(self.gene_set_pathways)
@@ -74,143 +60,108 @@ class gsea(object):
 	def _refine_pathways_profile(self, gene_input_pathway):
 		split_contents = deque(gene_input_pathway.split())
 
+		# I was unsure how to 'clean up' the pathways.txt file. This was a quick work-around.
 		while "Curated" not in split_contents[0]:
 			split_contents.popleft()
 		split_contents.popleft()
 
 		self.gene_set_pathways = self.gene_set_pathways + list(split_contents)
 
+	def test_gene_set_controller(self):
+		base_type = self.data_expression_profile.get('patient_type')
+		self.permutation_test_gene_set(base_type, 0)
+
+		print "Testing Null Hypothesis. Generating Permuation Tests Now."
+		random_patient_types = np.array(base_type)
+
+		for n in range(1,3):
+			np.random.seed(n)
+			self.permutation_test_gene_set(np.random.permutation(random_patient_types), n)
+			if n % 100 is 0:		
+				print ("Testing {}% complete.".format(n/10))
+
+		for h in self.enrichment_scores:
+			print h
+
+	# randomize the 'patient_type' key-set 
+	def permutation_test_gene_set(self, patient_types, test_sequence):
+
+		gene_results = []
+
+		for gene in self.data_expression_profile.keys():
+			if 'patient_type' not in gene:
+				result =  self.calculate_mean_differential_expression(patient_types, self.data_expression_profile.get(gene))
+				gene_results.append((gene,result))
+		
+		#self.initial_test_results.append(gene_results)
+
+		#self.initial_test_results[test_sequence].sort(key= lambda x: x[1])
+		#self.significance_of_difference(self.initial_test_results[test_sequence])
+
+		gene_results.sort(key= lambda x: x[1])
+		self.significance_of_difference(gene_results)
+
+	# sub-sections of the test itself
+
+	def significance_of_difference(self, test_sequence):
+		score = 0
+		max_score = 0
+		max_location = 0
 
 
+		up_step = math.sqrt ((self.gene_count - self.pathways_count) / self.pathways_count)
+		down_step = math.sqrt (self.pathways_count / (self.gene_count - self.pathways_count))
 
+		print ("upstep = {}".format(up_step))
+		print ("downstep = {}".format(down_step))
+		print self.pathways_count
+		print self.gene_count
 
-
-	'''
-	# locate union of data_expression_profile from gene_set_pathways // narrow the list
-	def narrow_set(self, search_term):
-		desired_gene_set = self.show_profile(search_term)
-		for k in self.data_expression_profile.keys():
-			if k in desired_gene_set:
-				#print k
-				#self.narrowed_gene_expressions.append(k)
-				self.gene_samples_found += 1
-
-		dummy = desired_gene_set.split("Manually Curated")
-		print "HERES THE DUMMY INFO"
-		print dummy[1].split()
-
-		#print desired_gene_set
-		#print self.narrowed_gene_expressions
-	'''
-
-
-	# run diference calculation
-	def test_gene_set(self):
-		# test set A and set B
-
-		# iterate through each dict, using the narrowed_gene expressions shit
-		# that AML/ ALL key array
-		# the unique typs
-		# the values within a given gene array
-
-		# return a tuple {NAME, differential expression}
-		for gene in self.data_expression_profile[1:]:
-			self.initial_test_results = self.calculate_mean_differential_expression(self.data_expression_profile.get('patient_type'), self.data_expression_profile.get(gene))
-			#self.test_results[gene] = (self._perform_gene_set_test(self.data_expression_profile.get(gene), self.data_expression_profile.get('patient_type')))
-
-
-
-		for d in self.initial_test_results:
-			print d
-
-		# self.data_expression_profile['patient_type']
-		# self.narrowed_gene_expressions
-
-
-	'''
-	# we'll need the patient types, and their values	
-	def _perform_gene_set_test(self, gene_set, patient_key):
-		# build the sets
-
-		unique_patient_types = list(set(patient_key))
-
-		gene_dict = {}
-		for pos in range(len(patient_key)):
-			if patient_key[pos] in gene_dict:
-				gene_dict[patient_key[pos]].append(gene_set[pos])
+		for loc in range(self.gene_count):
+			#print score
+			if test_sequence[loc][0] in self.gene_set_pathways:
+				score += up_step
 			else:
-				gene_dict[patient_key[pos]] = []
-				gene_dict[patient_key[pos]].append(gene_set[pos])
+				score -= down_step
+			if score > max_score:
+				max_score = score
+				max_location = loc
 
+		results = {}
+		results['score'] = score
+		results['es_static'] = max_location
+		self.enrichment_scores.append(results)
 
-		np.random.seed(self.seed_val)
-		n1 = len(gene_dict[unique_patient_types[0]])
-		n2 = len(gene_dict[unique_patient_types[1]])
+	#Using the ordered list generated in Problem 2, calculate the running sum, adding the appropriate up- 
+	#and down-steps as you move down the ranked list of genes. What is the supremum (enrichment score) of this running sum?
 
-
-		return ks_2samp(gene_dict.get(unique_patient_types[0]), gene_dict.get(unique_patient_types[1]))
-	'''
-
-	#Calculate the mean differential expression for each gene between the two groups.
 
 	def calculate_mean_differential_expression(self, patient_key, gene_set):
-	#The first step is to rank the genes on the basis of their level of 
-	#differential expression. Here, we simply averaged the expression of the 
-	#two samples and then ranked them on the basis of the difference in expression across samples. 
+		#The first step is to rank the genes on the basis of their level of 
+		#differential expression. Here, we simply averaged the expression of the 
+		#two samples and then ranked them on the basis of the difference in expression across samples. 
 		unique_patient_types = list(set(patient_key))
 		group_a = []
 		group_b = []
 
 		# sort into two groups based on the patient_key
 		for pos in range(len(patient_key)):
-			if patient_key[pos] is unique_patient_types[0]:
+			if patient_key[pos] == unique_patient_types[0]:
 				group_a.append(gene_set[pos])
 			else:
 				group_b.append(gene_set[pos])
 
-		de_a = _calculate_individual_expression(group_a)
-		de_b = _calculate_individual_expression(group_b)
+		de_a = self._calculate_individual_expression(group_a)
+		de_b = self._calculate_individual_expression(group_b)
 
 		return (de_a - de_b)
 
 	def _calculate_individual_expression(self, gene_set):
 		gene_set.sort()
-		difference = (numpy.diff(gene_set, n=len(gene_set)))
-		
-		return (difference / len(gene_set))
 
-
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-
-
-
-	# testing functions to read the output of the dictionaries
-	def show_genes(self):
-		genes = []
-		for g in self.data_expression_profile.keys():
-			genes.append(g)
-
-		print ("Genes: {}".format(genes))
-
-	def show_profile(self, search_term):
-		for p in self.gene_set_pathways:
-			if search_term.lower() in p.lower():
-				print p
-				return p
-
-	def show_test_results(self):
-		for (k, v) in self.test_results.items():
-			print (k, v)
-
-
-
+		difference = (np.diff(gene_set, n=(len(gene_set)-1)))
+		result = float(difference) / len(gene_set)
+		return result
 
 def main():
 	gs = gsea()
@@ -224,10 +175,8 @@ def main():
 		#print("Patient_expression_profile: {}".format(gs.data_expression_profile['patient_type']))
 
 		#gs.narrow_set("leukemia")
-		gs.test_gene_set()
+		gs.test_gene_set_controller()
 		#gs.show_test_results()
-
-
 
 main()
 
