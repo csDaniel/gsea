@@ -3,6 +3,7 @@ import math
 import random
 from collections import deque
 import sys, os
+import json
 
 class gsea(object):
 	# will need the class object to handle and store all that rickety data
@@ -18,8 +19,9 @@ class gsea(object):
 		self.gene_set_pathways = []
 		self.pathways_count = 0
 		self.initial_test_results = []
-		self.test_results = {}
+		self.test_results = []
 		self.enrichment_scores = []
+		self.p_value = 0
 
 	def error_handler(self, content):
 		print ("Error: {}\n".format(content))
@@ -68,20 +70,31 @@ class gsea(object):
 		self.gene_set_pathways = self.gene_set_pathways + list(split_contents)
 
 	def test_gene_set_controller(self):
+		print("Initial sample being tested")
 		base_type = self.data_expression_profile.get('patient_type')
 		self.permutation_test_gene_set(base_type, 0)
 
-		print "Testing Null Hypothesis. Generating Permuation Tests Now."
+		print "Testing Null Hypothesis. Generating Permutation Tests Now."
 		random_patient_types = np.array(base_type)
 
-		for n in range(1,3):
+		for n in range(1,4):
 			np.random.seed(n)
 			self.permutation_test_gene_set(np.random.permutation(random_patient_types), n)
 			if n % 100 is 0:		
 				print ("Testing {}% complete.".format(n/10))
 
-		for h in self.enrichment_scores:
-			print h
+		print("finding P-value")
+		self.determine_p_value()
+
+	def determine_p_value(self):
+		total_greater = 0
+		important_score = self.enrichment_scores[0]
+		for val in self.enrichment_scores[1:]:
+			if val > important_score:
+				total_greater += 1
+
+		p = float (total_greater / len(self.enrichment_scores))
+		self.p_value = math.sqrt( (p * (1-p))/len(self.enrichment_scores) )
 
 	# randomize the 'patient_type' key-set 
 	def permutation_test_gene_set(self, patient_types, test_sequence):
@@ -94,32 +107,35 @@ class gsea(object):
 				gene_results.append((gene,result))
 		
 		#self.initial_test_results.append(gene_results)
-
 		#self.initial_test_results[test_sequence].sort(key= lambda x: x[1])
 		#self.significance_of_difference(self.initial_test_results[test_sequence])
-
 		gene_results.sort(key= lambda x: x[1])
+		self.test_results.append(gene_results)
+
 		self.significance_of_difference(gene_results)
 
-	# sub-sections of the test itself
-
+	# this sqrt does not work! I cannot get the step-up and step-down calculations to work correction. I have 
+	# instead set a very basic stepping system. 
 	def significance_of_difference(self, test_sequence):
 		score = 0
 		max_score = 0
 		max_location = 0
+		min_score = 0
+		min_location = 0
 
+		# this sqrt does not work!
+		#up_step = math.sqrt ((self.gene_count - self.pathways_count) / self.pathways_count)
+		#down_step = math.sqrt (self.pathways_count / (self.gene_count - self.pathways_count))
 
-		up_step = math.sqrt ((self.gene_count - self.pathways_count) / self.pathways_count)
-		down_step = math.sqrt (self.pathways_count / (self.gene_count - self.pathways_count))
-
-		print ("upstep = {}".format(up_step))
-		print ("downstep = {}".format(down_step))
-		print self.pathways_count
-		print self.gene_count
+		#up_step = float(self.gene_count - self.pathways_count) / self.pathways_count
+		up_step = 1
+		down_step = float(self.pathways_count) / (self.gene_count - self.pathways_count)
 
 		for loc in range(self.gene_count):
+
 			#print score
 			if test_sequence[loc][0] in self.gene_set_pathways:
+				#print "FOUND SOMETHING!"
 				score += up_step
 			else:
 				score -= down_step
@@ -128,7 +144,7 @@ class gsea(object):
 				max_location = loc
 
 		results = {}
-		results['score'] = score
+		results['score'] = max_score
 		results['es_static'] = max_location
 		self.enrichment_scores.append(results)
 
@@ -158,10 +174,32 @@ class gsea(object):
 
 	def _calculate_individual_expression(self, gene_set):
 		gene_set.sort()
-
 		difference = (np.diff(gene_set, n=(len(gene_set)-1)))
 		result = float(difference) / len(gene_set)
 		return result
+
+	def save_expression_profile(self):
+		f = open('gene_expression_test_data', 'w')
+
+		# gene_profile
+		f.write("Gene Profiles:\n")
+		f.write(json.dumps(self.gene_set_pathways))
+		f.write("\n")
+
+		# score, es_static
+		f.write("Enrichment Score & ES_Static:\n")
+		f.write(json.dumps(self.enrichment_scores[0]))
+		# p-value
+
+		f.write("\n")
+		f.write("P-Value: {}\n".format(self.p_value))
+		# enriched scores
+		f.write(json.dumps(self.test_results[0]))
+		f.write("\n")
+
+
+		f.close()
+
 
 def main():
 	gs = gsea()
@@ -171,13 +209,9 @@ def main():
 	else:
 		gs.init_expressions(sys.argv[1])
 		gs.init_pathways_profile(sys.argv[2], "leukemia")
-
-		#print("Patient_expression_profile: {}".format(gs.data_expression_profile['patient_type']))
-
-		#gs.narrow_set("leukemia")
 		gs.test_gene_set_controller()
-		#gs.show_test_results()
 
+		gs.save_expression_profile()
 main()
 
 
